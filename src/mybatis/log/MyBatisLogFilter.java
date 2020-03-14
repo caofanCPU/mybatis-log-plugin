@@ -2,13 +2,14 @@ package mybatis.log;
 
 import com.intellij.execution.filters.Filter;
 import com.intellij.execution.ui.ConsoleViewContentType;
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.project.Project;
-import mybatis.log.hibernate.StringHelper;
+import mybatis.log.util.ConfigUtil;
+import mybatis.log.util.PrintUtil;
 import mybatis.log.util.RestoreSqlUtil;
+import mybatis.log.util.StringConst;
 import org.apache.commons.lang.StringUtils;
 import org.jetbrains.annotations.Nullable;
-import mybatis.log.util.PrintUtil;
-import mybatis.log.util.StringConst;
 
 /**
  * 语句过滤器
@@ -16,7 +17,9 @@ import mybatis.log.util.StringConst;
  */
 public class MyBatisLogFilter implements Filter {
     private final Project project;
-    private static String prevLine = "";
+    private static String preparingLine = "";
+    private static String parametersLine = "";
+    private static boolean isEnd = false;
 
     public MyBatisLogFilter(Project project) {
         this.project = project;
@@ -25,10 +28,10 @@ public class MyBatisLogFilter implements Filter {
     @Nullable
     @Override
     public Result applyFilter(final String currentLine, int endPoint) {
-        ConfigVo configVo = MyBatisLogConfig.getConfigVo(project);
-        if(configVo.getRunning()) {
+        if(this.project == null) return null;
+        if(ConfigUtil.getRunning(project)) {
             //过滤不显示的语句
-            String[] filters = MyBatisLogConfig.properties.getValues(StringConst.FILTER_KEY);
+            String[] filters = PropertiesComponent.getInstance(project).getValues(StringConst.FILTER_KEY);
             if (filters != null && filters.length > 0 && StringUtils.isNotBlank(currentLine)) {
                 for (String filter : filters) {
                     if(StringUtils.isNotBlank(filter) && currentLine.toLowerCase().contains(filter.trim().toLowerCase())) {
@@ -36,18 +39,34 @@ public class MyBatisLogFilter implements Filter {
                     }
                 }
             }
-            if(currentLine.contains(StringConst.PARAMETERS) && StringHelper.isNotEmpty(prevLine) && prevLine.contains(StringConst.PREPARING)) {
-                String preStr = configVo.getIndexNum() + "  " + currentLine.split(StringConst.PARAMETERS)[0].trim();
-                configVo.setIndexNum(configVo.getIndexNum() + 1);
-                String restoreSql = RestoreSqlUtil.restoreSql(prevLine, currentLine);
+            if(currentLine.contains(ConfigUtil.getPreparing(project))) {
+                preparingLine = currentLine;
+                return null;
+            }
+            if(StringUtils.isEmpty(preparingLine)) {
+                return null;
+            }
+            parametersLine = currentLine.contains(ConfigUtil.getParameters(project)) ? currentLine : parametersLine + currentLine;
+            if(!parametersLine.endsWith("Parameters: \n") && !parametersLine.endsWith("null\n") && !parametersLine.endsWith(")\n")) {
+                return null;
+            } else {
+                isEnd = true;
+            }
+            if(StringUtils.isNotEmpty(preparingLine) && StringUtils.isNotEmpty(parametersLine) && isEnd) {
+                int indexNum = ConfigUtil.getIndexNum(project);
+                String preStr = "--  " + indexNum + "  " + parametersLine.split(ConfigUtil.getParameters(project))[0].trim();//序号前缀字符串
+                ConfigUtil.setIndexNum(project, ++indexNum);
+                String restoreSql = RestoreSqlUtil.restoreSql(project, preparingLine, parametersLine);
                 PrintUtil.println(project, preStr, ConsoleViewContentType.USER_INPUT);
-                if(configVo.getSqlFormat()) {
+                if(ConfigUtil.getSqlFormat(project)) {
                     restoreSql = PrintUtil.format(restoreSql);
                 }
                 PrintUtil.println(project, restoreSql);
                 PrintUtil.println(project, StringConst.SPLIT_LINE, ConsoleViewContentType.USER_INPUT);
+                preparingLine = "";
+                parametersLine = "";
+                isEnd = false;
             }
-            prevLine = currentLine;
         }
         return null;
     }

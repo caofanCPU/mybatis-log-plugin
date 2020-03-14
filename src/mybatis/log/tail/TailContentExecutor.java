@@ -14,7 +14,6 @@ import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.RunContentDescriptor;
 import com.intellij.execution.ui.RunnerLayoutUi;
 import com.intellij.execution.ui.actions.CloseAction;
-import com.intellij.execution.ui.layout.PlaceInGrid;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ActionGroup;
@@ -35,7 +34,7 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.content.Content;
 import mybatis.log.Icons;
-import mybatis.log.MyBatisLogConfig;
+import mybatis.log.util.ConfigUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -53,20 +52,20 @@ import java.util.List;
 public class TailContentExecutor implements Disposable {
     private final Project myProject;
     private final List<Filter> myFilterList = new ArrayList<>();
+    private Runnable myTextAction;
     private Runnable myFilterAction;
     private Runnable myRerunAction;
     private Runnable myStopAction;
     private Runnable myFormatAction;
     private Computable<Boolean> myStopEnabled;
-    private String myTitle = " ";//插件窗口标题
-    private String myHelpId = null;
-    private boolean myActivateToolWindow = true;
+    private String myTitle = "";//插件窗口标题
     private ConsoleView consoleView = null;
+    private boolean myActivateToolWindow = true;
 
     public TailContentExecutor(@NotNull Project project) {
         myProject = project;
         consoleView = createConsole(project);
-        MyBatisLogConfig.consoleViewMap.put(project.getBasePath(), consoleView);
+        ConfigUtil.consoleViewMap.put(project.getBasePath(), consoleView);
     }
 
     public TailContentExecutor withTitle(String title) {
@@ -76,6 +75,11 @@ public class TailContentExecutor implements Disposable {
 
     public TailContentExecutor withFilter(Runnable filter) {
         myFilterAction = filter;
+        return this;
+    }
+
+    public TailContentExecutor withText(Runnable text) {
+        myTextAction = text;
         return this;
     }
 
@@ -95,6 +99,11 @@ public class TailContentExecutor implements Disposable {
         return this;
     }
 
+    public TailContentExecutor withActivateToolWindow(boolean activateToolWindow) {
+        myActivateToolWindow = activateToolWindow;
+        return this;
+    }
+
     private ConsoleView createConsole(@NotNull Project project) {
         TextConsoleBuilder consoleBuilder = TextConsoleBuilderFactory.getInstance().createBuilder(project);
         consoleBuilder.filters(myFilterList);
@@ -103,18 +112,19 @@ public class TailContentExecutor implements Disposable {
     }
 
     public void run() {
-        FileDocumentManager.getInstance().saveAllDocuments();
-
-        if (myHelpId != null) {
-            consoleView.setHelpId(myHelpId);
+        if (myProject.isDisposed()) {
+            return;
         }
-        Executor executor = TailRunExecutor.getRunExecutorInstance();
-        DefaultActionGroup actions = new DefaultActionGroup();
 
+        FileDocumentManager.getInstance().saveAllDocuments();
+        Executor executor = TailRunExecutor.getRunExecutorInstance();
+        if(executor == null) {
+            return;
+        }
+        DefaultActionGroup actions = new DefaultActionGroup();
         // Create runner UI layout
         final RunnerLayoutUi.Factory factory = RunnerLayoutUi.Factory.getInstance(myProject);
-        final RunnerLayoutUi layoutUi = factory.create("Tail", "Tail", "Tail", myProject);
-
+        final RunnerLayoutUi layoutUi = factory.create("SQL", "SQL", "SQL", myProject);
         final JComponent consolePanel = createConsolePanel(consoleView, actions);
         RunContentDescriptor descriptor = new RunContentDescriptor(new RunProfile() {
             @Nullable
@@ -125,7 +135,8 @@ public class TailContentExecutor implements Disposable {
 
             @Override
             public String getName() {
-                return myTitle;
+                //第一层名称显示
+                return "Sql";
             }
 
             @Nullable
@@ -134,20 +145,17 @@ public class TailContentExecutor implements Disposable {
                 return null;
             }
         }, new DefaultExecutionResult(), layoutUi);
-
-        final Content content = layoutUi.createContent("ConsoleContent", consolePanel, myTitle, AllIcons.Debugger.Console, consolePanel);
-        layoutUi.addContent(content, 0, PlaceInGrid.right, false);
+        descriptor.setExecutionId(System.nanoTime());
+        //第二层名称显示
+        final Content content = layoutUi.createContent("ConsoleContent", consolePanel, "executable sql statements", AllIcons.Debugger.Console, consolePanel);
+        content.setCloseable(false);
+        layoutUi.addContent(content);
         layoutUi.getOptions().setLeftToolbar(createActionToolbar(consolePanel, consoleView, layoutUi, descriptor, executor), "RunnerToolbar");
 
-        Disposer.register(this, descriptor);
+        Disposer.register(descriptor, this);
         Disposer.register(content, consoleView);
         if (myStopAction != null) {
-            Disposer.register(consoleView, new Disposable() {
-                @Override
-                public void dispose() {
-                    myStopAction.run();
-                }
-            });
+            Disposer.register(consoleView, () -> myStopAction.run());
         }
 
         for (AnAction action : consoleView.createConsoleActions()) {
@@ -155,7 +163,6 @@ public class TailContentExecutor implements Disposable {
         }
 
         ExecutionManager.getInstance(myProject).getContentManager().showRunContent(executor, descriptor);
-
         if (myActivateToolWindow) {
             activateToolWindow();
         }
@@ -164,28 +171,27 @@ public class TailContentExecutor implements Disposable {
     @NotNull
     private ActionGroup createActionToolbar(JComponent consolePanel, ConsoleView consoleView, @NotNull final RunnerLayoutUi myUi, RunContentDescriptor contentDescriptor, Executor runExecutorInstance) {
         final DefaultActionGroup actionGroup = new DefaultActionGroup();
+        actionGroup.add(new TextAction());
         actionGroup.add(new FilterAction());
+        actionGroup.add(new FormatAction());
         actionGroup.add(new RerunAction(consolePanel, consoleView));
         actionGroup.add(new StopAction());
-        actionGroup.add(new FormatAction());
-        actionGroup.add(new MyCloseAction(runExecutorInstance, contentDescriptor, myProject));
+//        actionGroup.add(new MyCloseAction(runExecutorInstance, contentDescriptor, myProject));
+        actionGroup.add(consoleView.createConsoleActions()[2]);
+        actionGroup.add(consoleView.createConsoleActions()[3]);
+        actionGroup.add(consoleView.createConsoleActions()[5]);
         return actionGroup;
     }
 
     public void activateToolWindow() {
-        ApplicationManager.getApplication().invokeLater(new Runnable() {
-            @Override
-            public void run() {
-                ToolWindowManager.getInstance(myProject).getToolWindow(TailRunExecutor.TOOLWINDOWS_ID).activate(null);
-            }
-        });
+        ApplicationManager.getApplication().invokeLater(() -> ToolWindowManager.getInstance(myProject).getToolWindow(TailRunExecutor.TOOLWINDOWS_ID).activate(null));
     }
 
     private static JComponent createConsolePanel(ConsoleView view, ActionGroup actions) {
         JPanel panel = new JPanel();
         panel.setLayout(new BorderLayout());
         panel.add(view.getComponent(), BorderLayout.CENTER);
-        panel.add(createToolbar(actions), BorderLayout.WEST);
+//        panel.add(createToolbar(actions), BorderLayout.WEST);
         return panel;
     }
 
@@ -244,8 +250,8 @@ public class TailContentExecutor implements Disposable {
         }
 
         @Override
-        public boolean isSelected(AnActionEvent anActionEvent) {
-            return MyBatisLogConfig.getConfigVo(getEventProject(anActionEvent)).getSqlFormat();
+        public boolean isSelected(AnActionEvent e) {
+            return e.getProject() == null ? false : ConfigUtil.getSqlFormat(e.getProject());
         }
 
         @Override
@@ -261,8 +267,11 @@ public class TailContentExecutor implements Disposable {
 
         @Override
         public void actionPerformed(AnActionEvent e) {
-            MyBatisLogConfig.getConfigVo(getEventProject(e)).setRunning(false);
-            MyBatisLogConfig.getConfigVo(getEventProject(e)).setIndexNum(1);
+            final Project project = e.getProject();
+            if (project == null) return;
+            ConfigUtil.active = false;
+            ConfigUtil.setRunning(project, false);
+            ConfigUtil.setIndexNum(project, 1);
             super.actionPerformed(e);
         }
     }
@@ -275,6 +284,17 @@ public class TailContentExecutor implements Disposable {
         @Override
         public void actionPerformed(AnActionEvent e) {
             myFilterAction.run();
+        }
+    }
+
+    private class TextAction extends AnAction implements DumbAware {
+        public TextAction() {
+            super("Sql Text", "Sql Text", Icons.TextIcon);
+        }
+
+        @Override
+        public void actionPerformed(AnActionEvent e) {
+            myTextAction.run();
         }
     }
 }

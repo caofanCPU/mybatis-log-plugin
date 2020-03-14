@@ -2,23 +2,19 @@ package mybatis.log.tail;
 
 import com.intellij.execution.Executor;
 import com.intellij.execution.ExecutorRegistry;
-import com.intellij.icons.AllIcons;
-import org.jetbrains.annotations.NonNls;
-import org.jetbrains.annotations.NotNull;
 import mybatis.log.Icons;
+import mybatis.log.util.StringConst;
+import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 
 /**
  * Window Config
+ *
  * @author ob
  */
 public class TailRunExecutor extends Executor {
-	public static final Icon ToolWindowRun = Icons.MyBatisIcon;
-
-	public static final String TOOLWINDOWS_ID = "MyBatis Sql Log";
-	@NonNls
-	public static final String EXECUTOR_ID = "MyBatisLogTail";
+    public static final String TOOLWINDOWS_ID = "MyBatis Log";
 
 	@Override
 	@NotNull
@@ -31,21 +27,21 @@ public class TailRunExecutor extends Executor {
 		return TOOLWINDOWS_ID;
 	}
 
-	@Override
-	public Icon getToolWindowIcon() {
-		return ToolWindowRun;
-	}
+    @Override
+    public Icon getToolWindowIcon() {
+        return Icons.MyBatisIcon;
+    }
 
-	@Override
-	@NotNull
-	public Icon getIcon() {
-		return AllIcons.Actions.Execute;
-	}
+    @Override
+    @NotNull
+    public Icon getIcon() {
+        return Icons.MyBatisIcon;
+    }
 
-	@Override
-	public Icon getDisabledIcon() {
-		return AllIcons.Process.DisabledRun;
-	}
+    @Override
+    public Icon getDisabledIcon() {
+        return Icons.DisabledRunIcon;
+    }
 
 	@Override
 	public String getDescription() {
@@ -61,7 +57,7 @@ public class TailRunExecutor extends Executor {
 	@Override
 	@NotNull
 	public String getId() {
-		return EXECUTOR_ID;
+		return StringConst.PLUGIN_ID;
 	}
 
 	@Override
@@ -75,6 +71,6 @@ public class TailRunExecutor extends Executor {
 	}
 
 	public static Executor getRunExecutorInstance() {
-		return ExecutorRegistry.getInstance().getExecutorById(EXECUTOR_ID);
+		return ExecutorRegistry.getInstance().getExecutorById(StringConst.PLUGIN_ID);
 	}
 }

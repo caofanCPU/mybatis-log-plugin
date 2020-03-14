@@ -1,12 +1,12 @@
 package mybatis.log.action.gui;
 
-import mybatis.log.MyBatisLogConfig;
-import org.apache.commons.lang.StringUtils;
+import com.intellij.ide.util.PropertiesComponent;
+import com.intellij.openapi.project.Project;
+import mybatis.log.util.ConfigUtil;
 import mybatis.log.util.StringConst;
+import org.apache.commons.lang.StringUtils;
 
 import javax.swing.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -20,31 +20,27 @@ public class FilterSetting extends JDialog {
     private JButton buttonOK;
     private JButton buttonCancel;
     private JTextArea textArea;
-    private JLabel label;
+    private JTextField preparingTextField;
+    private JTextField parametersTextField;
+    private JCheckBox startupCheckBox;
 
-    public FilterSetting() {
+    public FilterSetting(Project project) {
         this.setTitle("Filter Setting"); //设置标题
-        //设置label值，采用html语法分行
-        StringBuilder description = new StringBuilder("<html><body>")
-                .append("Filter the contents that contain below character, split every line.")
-                .append("</body></html>");
-        this.label.setText(description.toString());
+
+        String[] filters = PropertiesComponent.getInstance(project).getValues(StringConst.FILTER_KEY);//读取过滤字符
+        if (filters != null && filters.length > 0) {
+            this.textArea.setText(StringUtils.join(filters, "\n"));
+        }
+        this.preparingTextField.setText(ConfigUtil.getPreparing(project));
+        this.parametersTextField.setText(ConfigUtil.getParameters(project));
+        int startup = PropertiesComponent.getInstance(project).getInt(StringConst.STARTUP_KEY, 1);
+        startupCheckBox.setSelected(startup == 1);
 
         setContentPane(contentPane);
         setModal(true);
         getRootPane().setDefaultButton(buttonOK);
-
-        buttonOK.addActionListener(new ActionListener() {
-            public void actionPerformed(ActionEvent e) {
-                onOK();
-            }
-        });
-
-        buttonCancel.addActionListener(new ActionListener() {
-            public void actionPerformed(ActionEvent e) {
-                onCancel();
-            }
-        });
+        buttonOK.addActionListener(e -> onOK(project));
+        buttonCancel.addActionListener(e -> onCancel());
 
         // call onCancel() when cross is clicked
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
@@ -55,43 +51,39 @@ public class FilterSetting extends JDialog {
         });
 
         // call onCancel() on ESCAPE
-        contentPane.registerKeyboardAction(new ActionListener() {
-            public void actionPerformed(ActionEvent e) {
-                onCancel();
-            }
-        }, KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
+        contentPane.registerKeyboardAction(e -> onCancel(), KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
     }
 
-    private void onOK() {
+    private void onOK(Project project) {
+        final PropertiesComponent component = PropertiesComponent.getInstance(project);
         //保存配置字符
         if(textArea != null && StringUtils.isNotBlank(textArea.getText())) {
             String[] filters = textArea.getText().split("\n");
-            MyBatisLogConfig.properties.setValues(StringConst.FILTER_KEY, filters);
+            component.setValues(StringConst.FILTER_KEY, filters);
         } else {
-            MyBatisLogConfig.properties.setValues(StringConst.FILTER_KEY, null);
+            component.setValues(StringConst.FILTER_KEY, null);
         }
+        String preparingText = StringConst.PREPARING;
+        String parametersText = StringConst.PARAMETERS;
+        if(StringUtils.isNotBlank(preparingTextField.getText())) {
+            preparingText = preparingTextField.getText().trim();
+            if(!StringUtils.endsWith(preparingText, ":")) {
+                preparingText += ":";
+            }
+        }
+        if(StringUtils.isNotBlank(parametersTextField.getText())) {
+            parametersText = parametersTextField.getText().trim();
+            if(!StringUtils.endsWith(parametersText, ":")) {
+                parametersText += ":";
+            }
+        }
+        ConfigUtil.setPreparing(project, preparingText);
+        ConfigUtil.setParameters(project, parametersText);
+        ConfigUtil.setStartup(project, startupCheckBox.isSelected() ? 1 : 0);
         this.setVisible(false);
     }
 
     private void onCancel() {
-        // add your code here if necessary
         this.setVisible(false);
-    }
-
-    public JTextArea getTextArea() {
-        return textArea;
-    }
-
-    public void setTextArea(JTextArea textArea) {
-        this.textArea = textArea;
-    }
-
-    public static void main(String[] args) {
-        FilterSetting dialog = new FilterSetting();
-        dialog.pack();
-        dialog.setSize(400, 300);
-        dialog.setLocationRelativeTo(null);
-        dialog.setVisible(true);
-        System.exit(0);
     }
 }
